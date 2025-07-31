@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Propiedades Colaborativo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .modal {
+            transition: all 0.3s ease-in-out;
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        #modalMap, #detailMap {
+            height: 250px;
+            border-radius: 0.5rem;
+            z-index: 1; /* Ensure map is interactive */
+        }
+        .property-card {
+            cursor: pointer;
+        }
+        .calendar-day-event::after {
+            content: '';
+            display: block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #3b82f6;
+            margin: 2px auto 0;
+        }
+        .today {
+            background-color: #fef3c7; /* yellow-100 */
+        }
+        .selected-day {
+            background-color: #3b82f6 !important; /* blue-500 */
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- Main Container -->
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8">
+            <div class="text-center md:text-left">
+                <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Gestor de Propiedades</h1>
+                <p class="text-gray-600 mt-1">Plataforma colaborativa para la gestión de propiedades en venta.</p>
+                <p id="userIdDisplay" class="text-xs text-gray-500 mt-2"></p>
+            </div>
+            <div class="flex flex-col sm:flex-row items-center mt-4 md:mt-0 space-y-2 sm:space-y-0 sm:space-x-3">
+                 <button id="addEventBtn" class="w-full sm:w-auto bg-purple-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-purple-700 transition duration-300 flex items-center justify-center">
+                    <i class="fas fa-calendar-plus mr-2"></i> Agregar Nuevo Evento
+                </button>
+                <button id="addPropertyBtn" class="w-full sm:w-auto bg-blue-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-blue-700 transition duration-300 flex items-center justify-center">
+                    <i class="fas fa-plus mr-2"></i> Agregar Propiedad
+                </button>
+            </div>
+        </header>
+
+        <!-- Filter Section -->
+        <section id="filterSection" class="bg-white p-4 rounded-lg shadow-md mb-8">
+            <form id="filterForm" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                    <label for="filterUbicacion" class="block text-sm font-medium text-gray-700">Ubicación o Título</label>
+                    <input type="text" id="filterUbicacion" placeholder="Buscar..." class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="filterMontoMin" class="block text-sm font-medium text-gray-700">Precio Mínimo</label>
+                    <input type="text" id="filterMontoMin" placeholder="Ej: 40.000.000" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="filterMontoMax" class="block text-sm font-medium text-gray-700">Precio Máximo</label>
+                    <input type="text" id="filterMontoMax" placeholder="Ej: 80.000.000" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="flex space-x-2 items-end">
+                    <button type="submit" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300">Filtrar</button>
+                    <button type="button" id="clearFilterBtn" class="w-full bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-md hover:bg-gray-400 transition duration-300">Limpiar</button>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 col-span-1 sm:col-span-2 lg:col-span-4 gap-4 border-t pt-4 mt-4">
+                    <div>
+                        <label for="filterLeasing" class="block text-sm font-medium text-gray-700">Acepta Leasing</label>
+                        <select id="filterLeasing" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"><option value="todos">Todos</option><option value="si">Sí</option><option value="no">No</option></select>
+                    </div>
+                     <div>
+                        <label for="filterCredito" class="block text-sm font-medium text-gray-700">Acepta Crédito</label>
+                        <select id="filterCredito" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"><option value="todos">Todos</option><option value="si">Sí</option><option value="no">No</option></select>
+                    </div>
+                     <div>
+                        <label for="filterSubsidio" class="block text-sm font-medium text-gray-700">Acepta Subsidio</label>
+                        <select id="filterSubsidio" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"><option value="todos">Todos</option><option value="si">Sí</option><option value="no">No</option></select>
+                    </div>
+                    <div>
+                        <label for="sortProperties" class="block text-sm font-medium text-gray-700">Ordenar por</label>
+                        <select id="sortProperties" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md">
+                            <option value="prefix-asc">ID (Defecto)</option>
+                            <option value="price-asc">Precio (Menor a Mayor)</option>
+                            <option value="price-desc">Precio (Mayor a Menor)</option>
+                            <option value="location-asc">Ubicación (A-Z)</option>
+                        </select>
+                    </div>
+                </div>
+            </form>
+        </section>
+
+        <div class="lg:flex lg:gap-8 lg:items-start">
+            <!-- Calendar View (Sidebar on large screens) -->
+            <aside id="mainCalendarView" class="w-full lg:w-1/3 xl:w-1/4 bg-white p-4 rounded-lg shadow-md mb-8 lg:mb-0 lg:sticky lg:top-8">
+                 <div class="flex justify-between items-center pb-4 border-b">
+                    <div class="flex items-center space-x-4">
+                        <button id="prevMonthBtn" class="p-2 rounded-full hover:bg-gray-200"><i class="fas fa-chevron-left"></i></button>
+                        <h2 id="calendarMonthYear" class="text-xl font-bold text-gray-900"></h2>
+                        <button id="nextMonthBtn" class="p-2 rounded-full hover:bg-gray-200"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <div id="calendarGrid" class="grid grid-cols-7 gap-1 text-center mt-4"></div>
+            </aside>
+
+            <!-- Main Content (Grid or Event List) -->
+            <main class="w-full lg:w-2/3 xl:w-3/4">
+                <div id="mainEventList" class="hidden">
+                     <h2 id="eventListTitle" class="text-2xl font-bold mb-4">Eventos del día</h2>
+                     <div id="eventListContent"></div>
+                </div>
+                <div id="propertiesGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <!-- Property cards will be inserted here by JavaScript -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loading" class="fixed inset-0 z-50 flex items-center justify-center bg-white">
+        <i class="fas fa-spinner fa-spin text-4xl text-blue-600"></i>
+    </div>
+
+    <!-- Modal for Property Details -->
+    <div id="propertyDetailModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="modal bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col transform scale-95">
+            <div class="flex justify-end p-2"><button type="button" id="closeDetailModalBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times fa-2x"></i></button></div>
+            <div class="flex flex-col md:flex-row flex-1 overflow-hidden">
+                <div class="w-full md:w-1/2 h-64 md:h-full"><img id="detailImage" src="" class="w-full h-full object-cover"></div>
+                <div class="w-full md:w-1/2 flex flex-col p-6 overflow-y-auto">
+                    <h2 id="detailTitle" class="text-3xl font-bold text-gray-900"></h2>
+                    <p id="detailUbicacion" class="text-lg text-gray-600"></p>
+                    <p id="detailMonto" class="text-2xl font-bold text-blue-600 my-4"></p>
+                    <div class="space-y-4">
+                        <div><h3 class="font-semibold text-lg border-b pb-2 mb-2">Descripción</h3><p id="detailDescription" class="text-gray-700 text-sm whitespace-pre-wrap"></p></div>
+                        <div><h3 class="font-semibold text-lg border-b pb-2 mb-2">Detalles</h3><div id="detailSpecs" class="grid grid-cols-2 gap-2 text-sm"></div></div>
+                        <div><h3 class="font-semibold text-lg border-b pb-2 mb-2">Notas</h3><p id="detailNotes" class="text-gray-700 text-sm whitespace-pre-wrap"></p></div>
+                        <div><h3 class="font-semibold text-lg border-b pb-2 mb-2">Ubicación</h3><div id="detailMap"></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for Add/Edit Event -->
+    <div id="eventModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="modal bg-white rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col transform scale-95">
+            <div class="flex justify-between items-center p-5 bg-gray-50 border-b rounded-t-lg">
+                <h2 id="eventModalTitle" class="text-2xl font-bold text-gray-900">Agregar Evento</h2>
+                <button type="button" id="closeEventModalBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times fa-2x"></i></button>
+            </div>
+            <form id="eventForm" class="p-6 space-y-4">
+                <input type="hidden" id="eventId">
+                <div><label for="eventTitle" class="block text-sm font-medium text-gray-700">Título del Evento</label><input type="text" id="eventTitle" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md" required></div>
+                <div><label for="eventDate" class="block text-sm font-medium text-gray-700">Fecha</label><input type="date" id="eventDate" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md" required></div>
+                <div><label for="eventTime" class="block text-sm font-medium text-gray-700">Hora</label><input type="time" id="eventTime" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md" required></div>
+                <div><label for="eventPropertyLink" class="block text-sm font-medium text-gray-700">Vincular a Propiedad (Opcional)</label><select id="eventPropertyLink" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"></select></div>
+                <div><label for="eventNotes" class="block text-sm font-medium text-gray-700">Notas</label><textarea id="eventNotes" rows="3" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"></textarea></div>
+                <div class="flex justify-end space-x-4 pt-4"><button type="button" id="cancelEventBtn" class="bg-gray-200 text-gray-800 font-bold py-2 px-6 rounded-lg hover:bg-gray-300">Cancelar</button><button type="submit" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-green-700">Guardar Evento</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Add/Edit Property -->
+    <div id="propertyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="modal bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col transform scale-95">
+            <div class="flex justify-between items-center p-5 bg-gray-50 border-b rounded-t-lg"><h2 id="modalTitle" class="text-2xl font-bold text-gray-900">Agregar Nueva Propiedad</h2><button type="button" id="closeModalBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times fa-2x"></i></button></div>
+            <form id="propertyForm" class="flex flex-col flex-1 overflow-hidden"><div class="p-6 space-y-4 overflow-y-auto flex-1"><input type="hidden" id="propertyId"><input type="hidden" id="existingImageDataUrl"><input type="hidden" id="latitude"><input type="hidden" id="longitude">
+                    
+                    <div><label for="titulo" class="block text-sm font-medium text-gray-700 mb-1">Título de la Propiedad</label><input type="text" id="titulo" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" required></div>
+                    <div><label for="monto" class="block text-sm font-medium text-gray-700 mb-1">Monto (CLP)</label><input type="text" id="monto" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" required></div>
+                    <div><label for="corredor" class="block text-sm font-medium text-gray-700 mb-1">Corredor a Cargo</label><input type="text" id="corredor" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></div>
+                    <div><label for="imagenFile" class="block text-sm font-medium text-gray-700 mb-1">Imagen de la Propiedad</label><input type="file" id="imagenFile" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"><img id="imagePreview" src="" alt="Vista previa de la imagen" class="mt-4 rounded-md max-h-48 hidden"/></div>
+                    <div><label for="descripcion" class="block text-sm font-medium text-gray-700 mb-1">Descripción</label><textarea id="descripcion" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea></div>
+                    
+                    <fieldset class="border p-4 rounded-md"><legend class="text-sm font-medium text-gray-700 px-2">Detalles de la Propiedad</legend><div class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label for="pisos" class="block text-sm font-medium text-gray-700 mb-1">N° de Pisos</label><input type="number" id="pisos" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></div><div><label for="superficie" class="block text-sm font-medium text-gray-700 mb-1">Superficie (m²)</label><input type="text" id="superficie" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></div><div><label for="supTerreno" class="block text-sm font-medium text-gray-700 mb-1">Sup. Terreno (m²)</label><input type="text" id="supTerreno" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></div><div><label for="construcciones" class="block text-sm font-medium text-gray-700 mb-1">Const. Indep.</label><input type="number" id="construcciones" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></div><div><label for="regularizada" class="block text-sm font-medium text-gray-700 mb-1">Regularizada</label><select id="regularizada" class="w-full px-3 py-2 border border-gray-300 rounded-md"><option value="no">No</option><option value="si">Sí</option><option value="parcial">Parcial</option></select></div></div></fieldset>
+                    
+                    <fieldset class="border p-4 rounded-md"><legend class="text-sm font-medium text-gray-700 px-2">Detalles de Pago</legend><div class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label for="leasing" class="block text-sm font-medium text-gray-700 mb-1">Leasing Habitacional</label><select id="leasing" class="w-full px-3 py-2 border border-gray-300 rounded-md"><option value="no">No</option><option value="si">Sí</option></select></div><div><label for="credito" class="block text-sm font-medium text-gray-700 mb-1">Crédito Hipotecario</label><select id="credito" class="w-full px-3 py-2 border border-gray-300 rounded-md"><option value="no">No</option><option value="si">Sí</option></select></div><div><label for="subsidio" class="block text-sm font-medium text-gray-700 mb-1">Subsidio</label><select id="subsidio" class="w-full px-3 py-2 border border-gray-300 rounded-md"><option value="no">No</option><option value="si">Sí</option></select></div></div><div id="subsidioDetalleContainer" class="mt-4 hidden"><label for="subsidioDetalle" class="block text-sm font-medium text-gray-700 mb-1">¿Qué subsidio?</label><input type="text" id="subsidioDetalle" class="w-full px-3 py-2 border border-gray-300 rounded-md"></div><div class="mt-4"><label for="mediosDePago" class="block text-sm font-medium text-gray-700 mb-1">Otros Medios de Pago</label><input type="text" id="mediosDePago" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></div></fieldset>
+                    
+                    <div><label for="notaOpcional" class="block text-sm font-medium text-gray-700 mb-1">Notas Adicionales</label><textarea id="notaOpcional" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea></div>
+                    <div><label for="ubicacion" class="block text-sm font-medium text-gray-700 mb-1">Ubicación</label><input type="text" id="ubicacion" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" required></div>
+                    <div><button type="button" id="searchMapBtn" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300"><i class="fas fa-search-location mr-2"></i>Buscar y Ubicar en Mapa</button><div id="modalMap" class="mt-2"></div><p class="text-xs text-gray-500 mt-1">Luego de buscar, puedes arrastrar el marcador para ajustar la ubicación exacta.</p></div>
+                </div>
+                <div class="p-5 bg-gray-50 border-t rounded-b-lg"><div class="flex justify-end space-x-4"><button type="button" id="cancelBtn" class="bg-gray-200 text-gray-800 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition duration-300">Cancelar</button><button type="submit" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-green-700 transition duration-300 flex items-center"><i class="fas fa-check mr-2"></i> Aceptar y Guardar</button></div></div></form>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, getDocs, onSnapshot, updateDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- DO NOT EDIT ---
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'propiedades-colaborativas';
+        // --- END DO NOT EDIT ---
+
+        let app, auth, db, userId;
+        let isAuthReady = false;
+        let currentProperties = []; 
+        let allEvents = [];
+        let modalMap = null;
+        let modalMarker = null;
+        let detailMap = null;
+        let currentDate = new Date();
+
+        // Initial data
+        const initialProperties = [
+            { "prefix": 1, "titulo": "Casa Familiar en Alerce Norte", "ubicacion": "Alerce norte, parque lahuen", "monto": 48000000, "mediosDePago": "PIE. 2% Honorarios de corredora", "descripcion": "-2 habitaciones \n-cocina americana \n-⁠baño \n-⁠living comedor \n-⁠patio trasero\n-estacionamiento \n\nAdemás la propiedad quedará con algunos muebles tales como:\n\n-comedor\n-clóset\n-1 cama individual \n-Sillones \n-Algunas decoraciones.", "pisos": 1, "superficie": "50", "regularizada": "si", "supTerreno": "120", "corredor": "Ana González", "notaOpcional": "Entrega inmediata.", "leasing": "si", "credito": "si", "subsidio": "si", "subsidioDetalle": "DS1, DS19", "construcciones": 1},
+            { "prefix": 2, "titulo": "Acogedora Casa en Bosque Nativo", "ubicacion": "Bosque Nativo, Alerce Norte", "monto": 42500000, "mediosDePago": "PIE. 2% Honorarios de corredora", "descripcion": "\n- Living comedor \n- Cocina\n- Baño\n- 2 habitaciones\n- Antejardín \n- Patio \n- Estacionamiento ", "pisos": 1, "superficie": "45", "regularizada": "si", "supTerreno": "100", "corredor": "Carlos Soto", "notaOpcional": "", "leasing": "si", "credito": "si", "subsidio": "si", "subsidioDetalle": "DS1", "construcciones": 1},
+            { "prefix": 3, "titulo": "Casa Esquina en Alerce", "ubicacion": "Alerce", "monto": 45000000, "mediosDePago": "Efectivo", "descripcion": "Casa de 1 piso, ubicada en esquina, ideal para familias o inversión. Cuenta con:\n\n-2 dormitorios\n-1 baño\n-Cocina independiente\n-Living-comedor acogedor\n- Patio amplioPatio techado con estacionamiento", "pisos": 1, "superficie": "55", "regularizada": "no", "supTerreno": "150", "corredor": "Ana González", "notaOpcional": "Ideal para proyecto comercial.", "leasing": "no", "credito": "si", "subsidio": "no", "subsidioDetalle": "", "construcciones": 1},
+            { "prefix": 4, "titulo": "Propiedad en Altos de Alerce", "ubicacion": "Altos de Alerce", "monto": 47000000, "mediosDePago": "PIE. 2% Honorarios de corredora", "descripcion": "2 cómodos dormitorios 1 baño Propiedad cerrada con pandereta, brindando mayor seguridad y privacidad Amplio patio ideal para disfrutar en familia Estacionamiento techado Excelente ubicación: cerca de supermercados, colegios y servicios", "pisos": 1, "superficie": "48", "regularizada": "si", "supTerreno": "110", "corredor": "Pedro Pascal", "notaOpcional": "", "leasing": "no", "credito": "si", "subsidio": "si", "subsidioDetalle": "DS49", "construcciones": 1},
+            { "prefix": 5, "titulo": "Casa con Vista en Miramar", "ubicacion": "Miramar Puerto Montt", "monto": 58000000, "mediosDePago": "efectivo, PIE. 2% Honorarios de corredora", "descripcion": "- 2 Dormitorios \n- Baño\n- Cocina Americana\n- Living comedor \n", "pisos": 1, "superficie": "60", "regularizada": "parcial", "supTerreno": "200", "corredor": "Carlos Soto", "notaOpcional": "Ampliación no regularizada.", "leasing": "no", "credito": "si", "subsidio": "no", "subsidioDetalle": "", "construcciones": 1},
+            { "prefix": 6, "titulo": "Complejo de Departamentos", "ubicacion": "Puerto Montt", "monto": 65000000, "mediosDePago": "", "descripcion": "Casa principal consta de living, comedor, 2 baños, cocina amplia, comedor diario, dos dormitorios.\n-Depto 1, 2 dormitorios,  baño, living -comedor, \n-Depto 2, 1 dormitorio, cocinan, living -comedor, 1 baño.\n-Depto 3, 1 dormitorio, cocina, baño, living -comedor, baño\n-Bodega amplia\n-Casa en estado regular.", "pisos": 2, "superficie": "180", "regularizada": "no", "supTerreno": "300", "corredor": "Ana González", "notaOpcional": "Ideal para inversionistas.", "leasing": "no", "credito": "no", "subsidio": "no", "subsidioDetalle": "", "construcciones": 4},
+            { "prefix": 7, "titulo": "Casa en Puerto Varas", "ubicacion": "Puerto Varas", "monto": 170000000, "mediosDePago": "Efectivo", "descripcion": "", "pisos": 2, "superficie": "140", "regularizada": "si", "supTerreno": "500", "corredor": "Laura Pérez", "notaOpcional": "", "leasing": "no", "credito": "no", "subsidio": "no", "subsidioDetalle": "", "construcciones": 1},
+            { "prefix": 8, "titulo": "Casa de 2 Pisos en Alerce", "ubicacion": "Alerce", "monto": 45000000, "mediosDePago": "PIE. 2% Honorarios de corredora", "descripcion": "3 dormitorios, baño, living-comedor, cocina y estacionamiento.", "pisos": 2, "superficie": "70", "regularizada": "si", "supTerreno": "100", "corredor": "Carlos Soto", "notaOpcional": "", "leasing": "si", "credito": "si", "subsidio": "no", "subsidioDetalle": "", "construcciones": 1},
+            { "prefix": 9, "titulo": "Propiedad con Deptos. Indep.", "ubicacion": "Puerto Montt", "monto": 85000000, "mediosDePago": "Efectivo", "descripcion": "• Casa principal con 2 dormitorios, 2 baños, cocina equipada y amplio living-comedor.\n • 2 departamentos independientes, cada uno con 1 dormitorio, baño, cocina y living-comedor, perfectos para arrendar o para visitas.\n • Estacionamiento amplio con capacidad para 2 vehículos.", "pisos": 1, "superficie": "120", "regularizada": "parcial", "supTerreno": "250", "corredor": "Ana González", "notaOpcional": "Solo casa principal regularizada.", "leasing": "no", "credito": "si", "subsidio": "no", "subsidioDetalle": "", "construcciones": 3},
+            { "prefix": 10, "titulo": "Casa Familiar en Alerce Sur", "ubicacion": "Alerce Sur", "monto": 45500000, "mediosDePago": "Efectivo", "descripcion": "3 dormitorios \n1 baño\nLiving comedor\nCocina\nPatio techado\nEstacionamiento", "pisos": 2, "superficie": "65", "regularizada": "si", "supTerreno": "100", "corredor": "Pedro Pascal", "notaOpcional": "", "leasing": "no", "credito": "si", "subsidio": "no", "subsidioDetalle": "", "construcciones": 1}
+        ];
+
+        // UI Elements
+        const editModal = document.getElementById('propertyModal');
+        const detailModal = document.getElementById('propertyDetailModal');
+        const eventModal = document.getElementById('eventModal');
+        const addPropertyBtn = document.getElementById('addPropertyBtn');
+        const addEventBtn = document.getElementById('addEventBtn');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const closeDetailModalBtn = document.getElementById('closeDetailModalBtn');
+        const closeEventModalBtn = document.getElementById('closeEventModalBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const cancelEventBtn = document.getElementById('cancelEventBtn');
+        const propertyForm = document.getElementById('propertyForm');
+        const eventForm = document.getElementById('eventForm');
+        const propertiesGrid = document.getElementById('propertiesGrid');
+        const mainEventList = document.getElementById('mainEventList');
+        const loading = document.getElementById('loading');
+        const modalTitle = document.getElementById('modalTitle');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const imagenFileInput = document.getElementById('imagenFile');
+        const imagePreview = document.getElementById('imagePreview');
+        const existingImageDataUrlInput = document.getElementById('existingImageDataUrl');
+        const filterForm = document.getElementById('filterForm');
+        const clearFilterBtn = document.getElementById('clearFilterBtn');
+        const searchMapBtn = document.getElementById('searchMapBtn');
+        const latInput = document.getElementById('latitude');
+        const lonInput = document.getElementById('longitude');
+        const sortPropertiesSelect = document.getElementById('sortProperties');
+
+        // Functions
+        const openEditModal = () => { editModal.classList.remove('hidden'); setTimeout(() => { editModal.querySelector('.modal').classList.replace('scale-95', 'scale-100'); if (modalMap) modalMap.invalidateSize(); }, 10); };
+        const closeEditModal = () => { editModal.querySelector('.modal').classList.replace('scale-100', 'scale-95'); setTimeout(() => { editModal.classList.add('hidden'); if (modalMap) { modalMap.remove(); modalMap = null; } }, 300); };
+        const openEventModal = () => { eventModal.classList.remove('hidden'); setTimeout(() => { eventModal.querySelector('.modal').classList.replace('scale-95', 'scale-100'); }, 10); };
+        const closeEventModal = () => { eventModal.querySelector('.modal').classList.replace('scale-100', 'scale-95'); setTimeout(() => eventModal.classList.add('hidden'), 300); };
+        const openDetailModal = (property) => {
+            const placeholderImg = `https://placehold.co/800x600/e2e8f0/4a5568?text=${encodeURIComponent(property.ubicacion)}`;
+            document.getElementById('detailImage').src = property.imagenDataUrl || placeholderImg;
+            document.getElementById('detailTitle').textContent = property.titulo || 'Propiedad sin título';
+            document.getElementById('detailUbicacion').textContent = property.ubicacion;
+            document.getElementById('detailMonto').textContent = formatCurrency(property.monto);
+            document.getElementById('detailDescription').textContent = property.descripcion || 'No hay descripción disponible.';
+            document.getElementById('detailNotes').textContent = property.notaOpcional || 'No hay notas adicionales.';
+            
+            const specsContainer = document.getElementById('detailSpecs');
+            specsContainer.innerHTML = `
+                <span><strong>Corredor:</strong> ${property.corredor || 'N/A'}</span>
+                <span><strong>Pisos:</strong> ${property.pisos || 'N/A'}</span>
+                <span><strong>Superficie:</strong> ${property.superficie || 'N/A'} m²</span>
+                <span><strong>Terreno:</strong> ${property.supTerreno || 'N/A'} m²</span>
+                <span><strong>Const. Indep.:</strong> ${property.construcciones || 'N/A'}</span>
+                <span><strong>Regularizada:</strong> ${property.regularizada ? property.regularizada.charAt(0).toUpperCase() + property.regularizada.slice(1) : 'N/A'}</span>
+                <span><strong>Leasing:</strong> ${property.leasing === 'si' ? 'Sí' : 'No'}</span>
+                <span><strong>Crédito:</strong> ${property.credito === 'si' ? 'Sí' : 'No'}</span>
+                <span><strong>Subsidio:</strong> ${property.subsidio === 'si' ? `Sí (${property.subsidioDetalle || 'No especificado'})` : 'No'}</span>
+                <span class="col-span-2"><strong>Otros Pagos:</strong> ${property.mediosDePago || 'N/A'}</span>
+            `;
+
+            detailModal.classList.remove('hidden');
+            setTimeout(() => { detailModal.querySelector('.modal').classList.replace('scale-95', 'scale-100'); initDetailMap(property); }, 10);
+        };
+        const closeDetailModal = () => { detailModal.querySelector('.modal').classList.replace('scale-100', 'scale-95'); setTimeout(() => { detailModal.classList.add('hidden'); if (detailMap) { detailMap.remove(); detailMap = null; } }, 300); };
+        const formatCurrency = (value) => { if (isNaN(value)) return value; return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(value); };
+        const formatInputAsNumber = (input) => { let value = input.value.replace(/\D/g, ''); if (value) { input.value = new Intl.NumberFormat('es-CL').format(value); } else { input.value = ''; } };
+        const parseFormattedNumber = (value) => { return value.replace(/\D/g, ''); };
+        const resizeImage = (file, maxWidth = 800, maxHeight = 800) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas'); let width = img.width; let height = img.height;
+                        if (width > height) { if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; } } else { if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; } }
+                        canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height); resolve(canvas.toDataURL('image/jpeg', 0.8)); 
+                    };
+                    img.onerror = reject;
+                };
+                reader.onerror = reject;
+            });
+        };
+        const renderPropertyCard = (prop) => {
+            const card = document.createElement('div');
+            card.className = 'property-card bg-white rounded-lg shadow-lg overflow-hidden flex flex-col transform hover:-translate-y-1 transition-transform duration-300';
+            card.dataset.id = prop.id;
+            const placeholderImg = `https://placehold.co/600x400/e2e8f0/4a5568?text=${encodeURIComponent(prop.ubicacion)}`;
+            card.innerHTML = `
+                <div class="relative">
+                    <img src="${prop.imagenDataUrl || placeholderImg}" alt="Imagen de la propiedad en ${prop.ubicacion}" class="w-full h-48 object-cover" onerror="this.onerror=null;this.src='${placeholderImg}';">
+                    <span class="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-sm font-bold px-2 py-1 rounded">#${String(prop.prefix).padStart(3, '0')}</span>
+                </div>
+                <div class="p-5 flex flex-col flex-grow">
+                    <h3 class="text-xl font-bold text-gray-900 mb-1 truncate">${prop.titulo || 'Propiedad sin título'}</h3>
+                    <p class="text-sm text-gray-500 mb-2 truncate">${prop.ubicacion}</p>
+                    <p class="text-lg text-gray-600 mb-2 truncate"><i class="fas fa-user-tie mr-2"></i>${prop.corredor || 'No asignado'}</p>
+                    <p class="text-2xl font-bold text-blue-600 mb-4">${formatCurrency(prop.monto)}</p>
+                    <div class="mt-auto pt-4 border-t border-gray-200 flex justify-end space-x-3">
+                        <button class="edit-btn text-gray-500 hover:text-blue-600 transition-colors duration-300 z-10" data-id="${prop.id}"><i class="fas fa-edit"></i> Editar</button>
+                        <button class="delete-btn text-gray-500 hover:text-red-600 transition-colors duration-300 z-10" data-id="${prop.id}"><i class="fas fa-trash"></i> Eliminar</button>
+                    </div>
+                </div>`;
+            return card;
+        };
+        const renderProperties = (properties) => {
+            if (loading) loading.classList.add('hidden');
+            if (!propertiesGrid) return;
+            propertiesGrid.innerHTML = '';
+            if (properties.length === 0) { propertiesGrid.innerHTML = `<p class="text-gray-500 col-span-full text-center">No se encontraron propiedades con los filtros aplicados.</p>`; } else { properties.forEach(prop => { const card = renderPropertyCard(prop); propertiesGrid.appendChild(card); }); }
+        };
+        const applyFiltersAndSort = () => {
+            const filterText = document.getElementById('filterUbicacion').value.toLowerCase();
+            const filterMontoMin = parseFloat(parseFormattedNumber(document.getElementById('filterMontoMin').value)) || 0;
+            const filterMontoMax = parseFloat(parseFormattedNumber(document.getElementById('filterMontoMax').value)) || Infinity;
+            const filterLeasing = document.getElementById('filterLeasing').value;
+            const filterCredito = document.getElementById('filterCredito').value;
+            const filterSubsidio = document.getElementById('filterSubsidio').value;
+            const sortBy = sortPropertiesSelect.value;
+
+            let processedProperties = [...currentProperties];
+
+            // Filtering
+            processedProperties = processedProperties.filter(prop => {
+                const matchText = prop.ubicacion.toLowerCase().includes(filterText) || (prop.titulo && prop.titulo.toLowerCase().includes(filterText));
+                const matchMonto = prop.monto >= filterMontoMin && prop.monto <= filterMontoMax;
+                const matchLeasing = filterLeasing === 'todos' || prop.leasing === filterLeasing;
+                const matchCredito = filterCredito === 'todos' || prop.credito === filterCredito;
+                const matchSubsidio = filterSubsidio === 'todos' || prop.subsidio === filterSubsidio;
+                return matchText && matchMonto && matchLeasing && matchCredito && matchSubsidio;
+            });
+
+            // Sorting
+            switch (sortBy) {
+                case 'price-asc': processedProperties.sort((a, b) => a.monto - b.monto); break;
+                case 'price-desc': processedProperties.sort((a, b) => b.monto - a.monto); break;
+                case 'location-asc': processedProperties.sort((a, b) => a.ubicacion.localeCompare(b.ubicacion)); break;
+                default: processedProperties.sort((a, b) => a.prefix - b.prefix); break; // Default sort by prefix
+            }
+
+            renderProperties(processedProperties);
+            mainEventList.classList.add('hidden');
+            propertiesGrid.classList.remove('hidden');
+        };
+        const initModalMap = (lat, lng) => {
+            if (modalMap) modalMap.remove();
+            modalMap = L.map('modalMap').setView([lat, lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(modalMap);
+            modalMarker = L.marker([lat, lng], { draggable: true }).addTo(modalMap);
+            latInput.value = lat; lonInput.value = lng;
+            modalMarker.on('dragend', function(event){ const marker = event.target; const position = marker.getLatLng(); latInput.value = position.lat; lonInput.value = position.lng; });
+            setTimeout(() => modalMap.invalidateSize(), 100);
+        };
+        const initDetailMap = (property) => {
+            if (detailMap) detailMap.remove();
+            const mapContainer = document.getElementById('detailMap');
+            if (property.latitude && property.longitude) {
+                mapContainer.style.display = 'block';
+                detailMap = L.map('detailMap').setView([property.latitude, property.longitude], 16);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(detailMap);
+                L.marker([property.latitude, property.longitude]).addTo(detailMap);
+                setTimeout(() => detailMap.invalidateSize(), 100);
+            } else { mapContainer.style.display = 'none'; }
+        };
+        const renderCalendar = () => {
+            const calendarGrid = document.getElementById('calendarGrid');
+            const monthYearEl = document.getElementById('calendarMonthYear');
+            if (!calendarGrid || !monthYearEl) return;
+            calendarGrid.innerHTML = '';
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            monthYearEl.textContent = `${currentDate.toLocaleString('es-ES', { month: 'long' })} ${year}`;
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const daysOfWeek = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+            daysOfWeek.forEach(day => { calendarGrid.innerHTML += `<div class="font-bold text-gray-600">${day}</div>`; });
+            for (let i = 0; i < firstDay; i++) { calendarGrid.innerHTML += `<div></div>`; }
+            const today = new Date();
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                const hasEvent = allEvents.some(event => event.date === dateStr);
+                const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === i;
+                calendarGrid.innerHTML += `<div class="p-2 border rounded-md hover:bg-gray-100 cursor-pointer ${hasEvent ? 'calendar-day-event' : ''} ${isToday ? 'today' : ''}" data-date="${dateStr}">${i}</div>`;
+            }
+        };
+        const showEventsForDate = (dateStr) => {
+            document.querySelectorAll('#calendarGrid > div').forEach(el => el.classList.remove('selected-day'));
+            const dayEl = document.querySelector(`[data-date="${dateStr}"]`);
+            if (dayEl) dayEl.classList.add('selected-day');
+            
+            propertiesGrid.classList.add('hidden');
+            mainEventList.classList.remove('hidden');
+            const eventListContent = document.getElementById('eventListContent');
+            const eventListTitle = document.getElementById('eventListTitle');
+            const dateObj = new Date(dateStr + 'T00:00:00');
+            eventListTitle.textContent = `Eventos del ${dateObj.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+
+            const events = allEvents.filter(event => event.date === dateStr).sort((a,b) => a.time.localeCompare(b.time));
+            if (events.length === 0) {
+                eventListContent.innerHTML = '<p class="text-gray-500">No hay eventos para este día.</p>';
+                return;
+            }
+            eventListContent.innerHTML = events.map(event => `
+                <div class="p-3 mb-2 bg-white rounded-md shadow-sm border-l-4 ${event.propertyId ? 'border-blue-500' : 'border-purple-500'}">
+                    <p class="font-semibold">${event.time} - ${event.title}</p>
+                    ${event.propertyId ? `<p class="text-sm text-gray-600 hover:underline cursor-pointer" data-property-id="${event.propertyId}">${event.propertyUbicacion}</p>` : ''}
+                    ${event.notes ? `<p class="text-xs text-gray-500 mt-1 whitespace-pre-wrap">${event.notes}</p>` : ''}
+                </div>
+            `).join('');
+        };
+        const setupEventListeners = () => {
+            addPropertyBtn.addEventListener('click', () => { propertyForm.reset(); document.getElementById('propertyId').value = ''; modalTitle.textContent = 'Agregar Nueva Propiedad'; imagePreview.classList.add('hidden'); imagePreview.src = ''; existingImageDataUrlInput.value = ''; latInput.value = ''; lonInput.value = ''; if(modalMap) modalMap.remove(); modalMap = null; document.getElementById('modalMap').innerHTML = ''; openEditModal(); });
+            addEventBtn.addEventListener('click', () => { eventForm.reset(); document.getElementById('eventId').value = ''; document.getElementById('eventModalTitle').textContent = 'Agregar Evento'; const propSelect = document.getElementById('eventPropertyLink'); propSelect.innerHTML = '<option value="">Ninguna (Reunión general)</option>'; currentProperties.sort((a,b) => a.prefix - b.prefix).forEach(p => { propSelect.innerHTML += `<option value="${p.id}">#${String(p.prefix).padStart(3, '0')} - ${p.titulo}</option>`; }); openEventModal(); });
+            closeModalBtn.addEventListener('click', closeEditModal);
+            cancelBtn.addEventListener('click', closeEditModal);
+            closeDetailModalBtn.addEventListener('click', closeDetailModal);
+            closeEventModalBtn.addEventListener('click', closeEventModal);
+            cancelEventBtn.addEventListener('click', closeEventModal);
+            document.getElementById('monto').addEventListener('input', (e) => formatInputAsNumber(e.target));
+            document.getElementById('filterMontoMin').addEventListener('input', (e) => formatInputAsNumber(e.target));
+            document.getElementById('filterMontoMax').addEventListener('input', (e) => formatInputAsNumber(e.target));
+            imagenFileInput.addEventListener('change', (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (event) => { imagePreview.src = event.target.result; imagePreview.classList.remove('hidden'); }; reader.readAsDataURL(file); } });
+            filterForm.addEventListener('submit', (e) => { e.preventDefault(); applyFiltersAndSort(); });
+            sortPropertiesSelect.addEventListener('change', applyFiltersAndSort);
+            clearFilterBtn.addEventListener('click', () => { filterForm.reset(); applyFiltersAndSort(); mainEventList.classList.add('hidden'); propertiesGrid.classList.remove('hidden'); document.querySelectorAll('#calendarGrid > div').forEach(el => el.classList.remove('selected-day')); });
+            searchMapBtn.addEventListener('click', async () => { const address = document.getElementById('ubicacion').value; if (!address) { alert('Por favor, ingresa una ubicación para buscar.'); return; } const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address + ', Puerto Montt, Chile')}`; try { const response = await fetch(url); const data = await response.json(); if (data && data.length > 0) { const { lat, lon } = data[0]; initModalMap(lat, lon); } else { alert('No se pudo encontrar la ubicación. Intenta ser más específico.'); } } catch (error) { console.error('Error de geocodificación:', error); alert('Ocurrió un error al buscar la ubicación.'); } });
+            document.getElementById('subsidio').addEventListener('change', (e) => { document.getElementById('subsidioDetalleContainer').classList.toggle('hidden', e.target.value !== 'si'); });
+            propertyForm.addEventListener('submit', async (e) => { e.preventDefault(); if (!isAuthReady) return; const file = imagenFileInput.files[0]; let imageDataUrl = existingImageDataUrlInput.value; if (file) { try { imageDataUrl = await resizeImage(file); } catch (error) { console.error("Error resizing image:", error); alert("Hubo un error al procesar la imagen."); return; } } const id = document.getElementById('propertyId').value; const maxPrefix = currentProperties.reduce((max, p) => p.prefix > max ? p.prefix : max, 0); const propertyData = { prefix: id ? currentProperties.find(p=>p.id===id).prefix : maxPrefix + 1, titulo: document.getElementById('titulo').value, ubicacion: document.getElementById('ubicacion').value, monto: parseFloat(parseFormattedNumber(document.getElementById('monto').value)) || 0, corredor: document.getElementById('corredor').value, imagenDataUrl: imageDataUrl, descripcion: document.getElementById('descripcion').value, latitude: latInput.value, longitude: lonInput.value, mediosDePago: document.getElementById('mediosDePago').value, pisos: parseInt(document.getElementById('pisos').value) || null, superficie: document.getElementById('superficie').value, supTerreno: document.getElementById('supTerreno').value, construcciones: parseInt(document.getElementById('construcciones').value) || null, regularizada: document.getElementById('regularizada').value, leasing: document.getElementById('leasing').value, credito: document.getElementById('credito').value, subsidio: document.getElementById('subsidio').value, subsidioDetalle: document.getElementById('subsidioDetalle').value, notaOpcional: document.getElementById('notaOpcional').value, lastEditedBy: userId, }; try { const collectionRef = collection(db, `artifacts/${appId}/public/data/properties`); if (id) { await updateDoc(doc(collectionRef, id), propertyData); } else { await addDoc(collectionRef, propertyData); } closeEditModal(); } catch (error) { console.error("Error saving property: ", error); alert("Hubo un error al guardar la propiedad."); } });
+            eventForm.addEventListener('submit', async (e) => { e.preventDefault(); const propSelect = document.getElementById('eventPropertyLink'); const selectedOption = propSelect.options[propSelect.selectedIndex]; const eventData = { title: document.getElementById('eventTitle').value, date: document.getElementById('eventDate').value, time: document.getElementById('eventTime').value, notes: document.getElementById('eventNotes').value, propertyId: selectedOption.value || null, propertyUbicacion: selectedOption.value ? selectedOption.text : null, scheduledBy: userId }; try { await addDoc(collection(db, `artifacts/${appId}/public/data/events`), eventData); closeEventModal(); } catch (error) { console.error("Error saving event:", error); alert('Error al guardar el evento.'); }});
+            propertiesGrid.addEventListener('click', async (e) => { const collectionRef = collection(db, `artifacts/${appId}/public/data/properties`); const card = e.target.closest('.property-card'); if (e.target.closest('.edit-btn')) { const id = e.target.closest('.edit-btn').dataset.id; const propertyToEdit = currentProperties.find(p => p.id === id); if (!propertyToEdit) return; openEditModal(); modalTitle.textContent = 'Editar Propiedad'; document.getElementById('propertyId').value = propertyToEdit.id; document.getElementById('titulo').value = propertyToEdit.titulo || ''; document.getElementById('monto').value = propertyToEdit.monto ? new Intl.NumberFormat('es-CL').format(propertyToEdit.monto) : ''; document.getElementById('corredor').value = propertyToEdit.corredor || ''; document.getElementById('descripcion').value = propertyToEdit.descripcion || ''; document.getElementById('mediosDePago').value = propertyToEdit.mediosDePago || ''; document.getElementById('pisos').value = propertyToEdit.pisos || ''; document.getElementById('superficie').value = propertyToEdit.superficie || ''; document.getElementById('supTerreno').value = propertyToEdit.supTerreno || ''; document.getElementById('construcciones').value = propertyToEdit.construcciones || ''; document.getElementById('regularizada').value = propertyToEdit.regularizada || 'no'; document.getElementById('leasing').value = propertyToEdit.leasing || 'no'; document.getElementById('credito').value = propertyToEdit.credito || 'no'; document.getElementById('subsidio').value = propertyToEdit.subsidio || 'no'; document.getElementById('subsidioDetalle').value = propertyToEdit.subsidioDetalle || ''; document.getElementById('subsidioDetalleContainer').classList.toggle('hidden', propertyToEdit.subsidio !== 'si'); document.getElementById('notaOpcional').value = propertyToEdit.notaOpcional || ''; document.getElementById('ubicacion').value = propertyToEdit.ubicacion || ''; latInput.value = propertyToEdit.latitude || ''; lonInput.value = propertyToEdit.longitude || ''; imagenFileInput.value = ''; if (propertyToEdit.imagenDataUrl) { imagePreview.src = propertyToEdit.imagenDataUrl; imagePreview.classList.remove('hidden'); existingImageDataUrlInput.value = propertyToEdit.imagenDataUrl; } else { imagePreview.src = ''; imagePreview.classList.add('hidden'); existingImageDataUrlInput.value = ''; } if (propertyToEdit.latitude && propertyToEdit.longitude) { setTimeout(() => { initModalMap(propertyToEdit.latitude, propertyToEdit.longitude); }, 100); } } else if (e.target.closest('.delete-btn')) { const id = e.target.closest('.delete-btn').dataset.id; try { await deleteDoc(doc(collectionRef, id)); } catch (error) { console.error("Error deleting property: ", error); } } else if (card) { const id = card.dataset.id; const property = currentProperties.find(p => p.id === id); if (property) { openDetailModal(property); } } });
+            document.getElementById('prevMonthBtn').addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); renderCalendar(); });
+            document.getElementById('nextMonthBtn').addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); renderCalendar(); });
+            document.getElementById('calendarGrid').addEventListener('click', (e) => { if (e.target.dataset.date) { showEventsForDate(e.target.dataset.date); } });
+            document.getElementById('mainEventList').addEventListener('click', (e) => { const eventEl = e.target.closest('[data-property-id]'); if(eventEl) { const prop = currentProperties.find(p => p.id === eventEl.dataset.propertyId); if (prop) { openDetailModal(prop); } }});
+        };
+        async function seedInitialData() { if (!isAuthReady) return; const collectionRef = collection(db, `artifacts/${appId}/public/data/properties`); const snapshot = await getDocs(collectionRef); if (snapshot.empty) { console.log("No properties found. Seeding initial data..."); const promises = initialProperties.map(prop => { prop.lastEditedBy = userId; return addDoc(collectionRef, prop); }); await Promise.all(promises); console.log("Initial data seeded successfully."); } else { console.log("Properties collection already exists. Skipping seed."); } }
+        async function main() {
+            if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) { loading.classList.innerHTML = '<p class="text-red-500 text-center">Error: Configuración de Firebase no encontrada.</p>'; return; }
+            app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app);
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid; userIdDisplay.textContent = `Tu ID de colaborador: ${userId}`; isAuthReady = true;
+                    onSnapshot(query(collection(db, `artifacts/${appId}/public/data/properties`)), (snapshot) => { currentProperties = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); applyFiltersAndSort(); });
+                    onSnapshot(query(collection(db, `artifacts/${appId}/public/data/events`)), (snapshot) => { allEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); renderCalendar(); });
+                    await seedInitialData();
+                } else { isAuthReady = false; userId = null; userIdDisplay.textContent = 'Iniciando sesión...'; }
+            });
+            try { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { await signInWithCustomToken(auth, __initial_auth_token); } else { await signInAnonymously(auth); } } catch (error) { console.error("Authentication Error:", error); loading.innerHTML = `<p class="text-red-500 text-center">Error de autenticación. No se puede cargar la aplicación.</p>`; }
+            setupEventListeners();
+        }
+        main();
+    </script>
+</body>
+</html>
